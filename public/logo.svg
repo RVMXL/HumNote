@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="HumNote">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#065f46"/>
+      <stop offset="1" stop-color="#022c22"/>
+    </linearGradient>
+    <linearGradient id="mic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6ee7b7"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <!-- microphone capsule -->
+  <rect x="214" y="118" width="84" height="172" rx="42" fill="url(#mic)"/>
+  <!-- cradle -->
+  <path d="M 176 252 A 80 80 0 0 0 336 252" fill="none" stroke="#34d399" stroke-width="26" stroke-linecap="round"/>
+  <!-- stem -->
+  <path d="M 256 332 L 256 372" fill="none" stroke="#34d399" stroke-width="26" stroke-linecap="round"/>
+  <!-- base -->
+  <path d="M 206 380 L 306 380" fill="none" stroke="#34d399" stroke-width="26" stroke-linecap="round"/>
+  <!-- sound arcs -->
+  <path d="M 372 186 A 56 56 0 0 1 372 270" fill="none" stroke="#a7f3d0" stroke-width="20" stroke-linecap="round" opacity="0.9"/>
+  <path d="M 140 270 A 56 56 0 0 1 140 186" fill="none" stroke="#a7f3d0" stroke-width="20" stroke-linecap="round" opacity="0.55"/>
+</svg>
