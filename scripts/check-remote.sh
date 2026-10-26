@@ -96,8 +96,8 @@ do_check() {
   dirty="$(git status --porcelain | wc -l)"
   echo "локально:    $local_sha на $BRANCH$( [ "$dirty" -gt 0 ] && echo ", $dirty изменённых файлов" )"
 
-  # 2. доступен ли GitHub
-  if ! git ls-remote --heads origin "$BRANCH" >/dev/null 2>&1; then
+  # 2. доступен ли GitHub (приватный репо — с токеном, если он есть)
+  if ! git ls-remote --heads "$(auth_url)" "$BRANCH" >/dev/null 2>&1; then
     warn "GitHub недоступен (сеть?) — сверяюсь с локальным bare-бэкапом"
     if [ -d "$BARE_BACKUP" ]; then
       backup_sha="$(git --git-dir="$BARE_BACKUP" rev-parse --short "$BRANCH" 2>/dev/null || echo '?')"
@@ -112,7 +112,7 @@ do_check() {
     exit 3
   fi
 
-  git fetch origin --tags --quiet
+  git fetch "$(auth_url)" --tags --quiet "$BRANCH:refs/remotes/origin/$BRANCH"
 
   remote_sha="$(git rev-parse --short "origin/$BRANCH")"
   echo "origin/main: $remote_sha (GitHub)"
@@ -127,8 +127,8 @@ do_check() {
   fi
 
   # 3. теги
-  missing_tags="$(comm -13 <(git ls-remote --tags --refs origin | awk -F/ '{print $3}' | sort) <(git tag -l | sort) | tr '\n' ' ')"
-  stale_tags="$(comm -23 <(git ls-remote --tags --refs origin | awk -F/ '{print $3}' | sort) <(git tag -l | sort) | tr '\n' ' ')"
+  missing_tags="$(comm -13 <(git ls-remote --tags --refs "$(auth_url)" | awk -F/ '{print $3}' | sort) <(git tag -l | sort) | tr '\n' ' ')"
+  stale_tags="$(comm -23 <(git ls-remote --tags --refs "$(auth_url)" | awk -F/ '{print $3}' | sort) <(git tag -l | sort) | tr '\n' ' ')"
   [ -n "$stale_tags" ] && warn "теги есть на GitHub, нет локально: $stale_tags"
 
   case "$state" in
@@ -159,7 +159,7 @@ do_check() {
 
 # ---------- pull ----------
 do_pull() {
-  git fetch origin --tags --quiet || { bad "GitHub недоступен"; exit 3; }
+  git fetch "$(auth_url)" --tags --quiet "$BRANCH:refs/remotes/origin/$BRANCH" || { bad "GitHub недоступен (нужен GITHUB_TOKEN для приватного репо)"; exit 3; }
   dirty="$(git status --porcelain | wc -l)"
   if [ "$dirty" -gt 0 ]; then
     bad "рабочее дерево грязное ($dirty) — сначала commit/stash, pull отменён"
