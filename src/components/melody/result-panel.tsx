@@ -9,6 +9,7 @@ import { Slider } from '@/components/ui/slider'
 import { NoteEvent } from '@/lib/audio/types'
 import { formatTime } from '@/lib/audio/notes'
 import { WaveChoice } from '@/lib/audio/synth'
+import { useI18n } from '@/lib/i18n'
 import { PianoRoll } from './piano-roll'
 
 interface ResultPanelProps {
@@ -37,13 +38,6 @@ interface ResultPanelProps {
   isFromHistory: boolean
 }
 
-const GRID_LABELS: Record<number, string> = {
-  1: '1/4 такта',
-  0.5: '1/8 такта',
-  0.25: '1/16 такта',
-  0: 'Выкл',
-}
-
 export function ResultPanel(props: ResultPanelProps) {
   const {
     notes,
@@ -70,24 +64,25 @@ export function ResultPanel(props: ResultPanelProps) {
     onReset,
     isFromHistory,
   } = props
+  const { t } = useI18n()
 
   return (
     <section
-      className="w-full rounded-3xl border border-zinc-800 bg-zinc-900/70 p-4 shadow-xl sm:p-6"
-      aria-label="Распознанная мелодия"
+      className="w-full rounded-3xl border border-border bg-card p-4 shadow-xl sm:p-6"
+      aria-label={t('result.recognized')}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-zinc-100">
-          {isFromHistory ? 'Мелодия из истории' : 'Распознанная мелодия'}
+        <h2 className="text-base font-semibold text-foreground">
+          {isFromHistory ? t('result.fromHistory') : t('result.recognized')}
         </h2>
         <div className="flex items-center gap-1.5">
-          <Badge variant="secondary" className="border-0 bg-zinc-800 font-mono text-zinc-300">
-            {notes.length} нот
+          <Badge variant="secondary" className="border-0 bg-muted font-mono text-foreground">
+            {t('notes.count', { n: notes.length })}
           </Badge>
-          <Badge variant="secondary" className="border-0 bg-zinc-800 font-mono text-zinc-300">
+          <Badge variant="secondary" className="border-0 bg-muted font-mono text-foreground">
             {bpm} BPM
           </Badge>
-          <Badge variant="secondary" className="border-0 bg-zinc-800 font-mono text-zinc-300">
+          <Badge variant="secondary" className="border-0 bg-muted font-mono text-foreground">
             {formatTime(durationSec)}
           </Badge>
         </div>
@@ -103,45 +98,63 @@ export function ResultPanel(props: ResultPanelProps) {
           <Button
             onClick={onStop}
             className="h-12 rounded-xl bg-red-500 font-semibold text-white hover:bg-red-400"
-            aria-label="Остановить воспроизведение"
+            aria-label={t('result.stop')}
           >
-            <Square className="mr-1 h-4 w-4 fill-current" /> Стоп
+            <Square className="mr-1 h-4 w-4 fill-current" /> {t('result.stop')}
           </Button>
         ) : (
           <Button
             onClick={onPlay}
             disabled={!notes.length}
-            className="h-12 rounded-xl bg-emerald-500 font-semibold text-zinc-950 hover:bg-emerald-400"
-            aria-label="Воспроизвести мелодию"
+            className="h-12 rounded-xl bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
+            aria-label={t('result.listen')}
           >
-            <Play className="mr-1 h-4 w-4 fill-current" /> Слушать
+            <Play className="mr-1 h-4 w-4 fill-current" /> {t('result.listen')}
           </Button>
         )}
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-zinc-500">Тембр</span>
+          <span className="text-xs text-muted-foreground">{t('result.timbre')}</span>
           <Select value={wave} onValueChange={(v) => onWaveChange(v as WaveChoice)}>
-            <SelectTrigger className="h-11 rounded-xl border-zinc-800 bg-zinc-950" aria-label="Тембр синтезатора">
+            <SelectTrigger
+              className="h-11 w-full rounded-xl border-border bg-card"
+              aria-label={t('result.timbreAria')}
+            >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="border-zinc-800 bg-zinc-900">
-              <SelectItem value="sine">Sine</SelectItem>
-              <SelectItem value="square">Square</SelectItem>
+            <SelectContent>
+              <SelectItem value="sine" className="text-foreground">
+                Sine
+              </SelectItem>
+              <SelectItem value="square" className="text-foreground">
+                Square
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className="col-span-2 flex flex-col gap-1 sm:col-span-1">
-          <span className="text-xs text-zinc-500">Квантование</span>
+          <span className="text-xs text-muted-foreground">{t('result.quant')}</span>
           <Select value={String(grid)} onValueChange={(v) => onGridChange(Number(v))}>
-            <SelectTrigger className="h-11 rounded-xl border-zinc-800 bg-zinc-950" aria-label="Сетка квантования">
+            <SelectTrigger
+              className="h-11 w-full rounded-xl border-border bg-card"
+              aria-label={t('result.gridAria')}
+            >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="border-zinc-800 bg-zinc-900">
-              <SelectItem value="1">{GRID_LABELS[1]}</SelectItem>
-              <SelectItem value="0.5">{GRID_LABELS[0.5]}</SelectItem>
-              <SelectItem value="0.25">{GRID_LABELS[0.25]}</SelectItem>
-              <SelectItem value="0">{GRID_LABELS[0]}</SelectItem>
+            <SelectContent>
+              <SelectItem value="1" className="text-foreground">
+                {t('grid.1')}
+              </SelectItem>
+              <SelectItem value="0.5" className="text-foreground">
+                {t('grid.0.5')}
+              </SelectItem>
+              <SelectItem value="0.25" className="text-foreground">
+                {t('grid.0.25')}
+              </SelectItem>
+              <SelectItem value="0" className="text-foreground">
+                {t('grid.0')}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -149,8 +162,8 @@ export function ResultPanel(props: ResultPanelProps) {
 
       {/* tempo */}
       <div className="mt-4 flex items-center gap-4">
-        <span className="w-12 shrink-0 font-mono text-sm text-zinc-400" aria-live="polite">
-          {bpm} <span className="text-xs text-zinc-600">BPM</span>
+        <span className="w-12 shrink-0 font-mono text-sm text-muted-foreground" aria-live="polite">
+          {bpm} <span className="text-xs text-muted-foreground/70">BPM</span>
         </span>
         <Slider
           value={[bpm]}
@@ -158,65 +171,63 @@ export function ResultPanel(props: ResultPanelProps) {
           max={220}
           step={1}
           onValueChange={([v]) => onBpmChange(v)}
-          aria-label="Темп"
+          aria-label={t('result.tempoAria')}
         />
       </div>
 
       {/* export */}
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-5">
-        <Button
-          variant="outline"
-          onClick={onExportMidi}
-          disabled={!notes.length}
-          className="h-11 rounded-xl border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
-        >
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-5">
+        <Button variant="outline" onClick={onExportMidi} disabled={!notes.length} className="h-11 rounded-xl">
           <Download className="mr-1 h-4 w-4" /> MIDI
         </Button>
         <Button
           variant="outline"
           onClick={onExportWav}
           disabled={!notes.length || exportingWav}
-          className="h-11 rounded-xl border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+          className="h-11 rounded-xl"
         >
           <Download className="mr-1 h-4 w-4" /> WAV
         </Button>
-        <Button
-          variant="outline"
-          onClick={onShare}
-          disabled={!notes.length}
-          className="h-11 rounded-xl border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
-        >
-          <Share2 className="mr-1 h-4 w-4" /> Поделиться
+        <Button variant="outline" onClick={onShare} disabled={!notes.length} className="h-11 rounded-xl">
+          <Share2 className="mr-1 h-4 w-4" /> {t('result.share')}
         </Button>
 
         <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
           <Input
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="Название наброска"
+            placeholder={t('result.titlePlaceholder')}
             maxLength={100}
-            aria-label="Название наброска"
-            className="h-11 min-w-0 flex-1 rounded-xl border-zinc-800 bg-zinc-950 sm:w-44"
+            aria-label={t('result.titleAria')}
+            className="h-11 min-w-0 flex-1 rounded-xl border-border bg-card sm:w-44"
           />
           {saved ? (
-            <Button disabled variant="outline" className="h-11 rounded-xl border-emerald-500/40 text-emerald-400">
-              <Check className="mr-1 h-4 w-4" /> В истории
+            <Button
+              disabled
+              variant="outline"
+              className="h-11 rounded-xl border-primary/40 text-primary"
+            >
+              <Check className="mr-1 h-4 w-4" /> {t('result.saved')}
             </Button>
           ) : (
             <Button
               onClick={onSave}
               disabled={!notes.length || saving}
-              className="h-11 rounded-xl bg-white font-semibold text-zinc-950 hover:bg-zinc-200"
+              className="h-11 rounded-xl bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
             >
-              <Save className="mr-1 h-4 w-4" /> {saving ? 'Сохраняю…' : 'Сохранить'}
+              <Save className="mr-1 h-4 w-4" /> {saving ? t('result.saving') : t('result.save')}
             </Button>
           )}
         </div>
       </div>
 
-      <div className="mt-4 flex justify-center">
-        <Button variant="ghost" size="sm" onClick={onReset} className="text-zinc-500 hover:text-zinc-200">
-          <RotateCcw className="mr-1.5 h-4 w-4" /> Новая запись
+      {/* prominent accent CTA — starts the next take */}
+      <div className="mt-5 flex justify-center">
+        <Button
+          onClick={onReset}
+          className="h-11 rounded-xl bg-primary px-6 font-semibold text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90"
+        >
+          <RotateCcw className="mr-1.5 h-4 w-4" /> {t('result.newRec')}
         </Button>
       </div>
     </section>

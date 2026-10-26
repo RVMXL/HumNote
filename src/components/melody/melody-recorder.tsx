@@ -1,7 +1,9 @@
 'use client'
 
-import { AlertTriangle, AudioLines } from 'lucide-react'
+import { AlertTriangle, AudioLines, Globe, Moon, Sun } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { analyzeRecording, quantize } from '@/lib/audio/analysis'
 import { freqToMidi, midiToName } from '@/lib/audio/notes'
@@ -10,6 +12,8 @@ import { MicRecorder } from '@/lib/audio/recorder'
 import { renderMelodyWav, SynthPlayer, WaveChoice } from '@/lib/audio/synth'
 import { MelodyAnalysis, NoteEvent } from '@/lib/audio/types'
 import { saveBlob, shareBlob } from '@/lib/export'
+import { LOCALES, LOCALE_NAMES, LOCALE_TAGS, Locale, useI18n } from '@/lib/i18n'
+import { useTheme } from '@/lib/theme'
 import { newSketchId, useHistory } from '@/lib/store'
 import { MelodySketch } from '@/lib/types'
 import { HistoryList } from './history-list'
@@ -20,11 +24,23 @@ type Phase = 'idle' | 'recording' | 'processing' | 'result' | 'error'
 
 const MAX_REC_SEC = 60
 
-function defaultTitle(): string {
-  return `Набросок · ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+/** Flag on the pushed history entry — the Android back gesture unwinds it. */
+const HISTORY_FLAG = 'humnoteView'
+
+function hasViewGuard(): boolean {
+  if (typeof window === 'undefined') return false
+  return Boolean((window.history.state as Record<string, unknown> | null)?.[HISTORY_FLAG])
+}
+
+function pushViewGuard(): void {
+  if (typeof window === 'undefined' || hasViewGuard()) return
+  window.history.pushState({ [HISTORY_FLAG]: true }, '')
 }
 
 export function MelodyRecorder() {
+  const { t, locale, setLocale } = useI18n()
+  const { theme, toggle: toggleTheme } = useTheme()
+
   const [phase, setPhase] = useState<Phase>('idle')
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -47,9 +63,20 @@ export function MelodyRecorder() {
   const recorderRef = useRef<MicRecorder | null>(null)
   const playerRef = useRef<SynthPlayer | null>(null)
   const stopFnRef = useRef<() => void>(() => undefined)
+  // invalidates the pending "recognizing" timeout when the view is reset
+  const analyzeTokenRef = useRef(0)
 
   const { toast } = useToast()
   const addSketch = useHistory((s) => s.add)
+
+  const defaultTitle = useMemo(
+    () =>
+      `${t('sketch.default')} · ${new Date().toLocaleTimeString(LOCALE_TAGS[locale], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`,
+    [t, locale]
+  )
 
   /** quantized notes — recomputed live when tempo/grid change */
   const notes = useMemo(() => {
@@ -64,6 +91,39 @@ export function MelodyRecorder() {
     return endBeat * (60 / bpm)
   }, [notes, bpm])
 
+  /**
+   * Full reset to the "ready to record" state. Called from the "New recording"
+   * button and from the popstate handler — the Android/browser back gesture
+   * therefore always goes one step back inside the app (cancel recording,
+   * discard the result) instead of minimizing it.
+   */
+  const hardReset = useCallback(() => {
+    analyzeTokenRef.current += 1
+    const rec = recorderRef.current
+    if (rec) {
+      recorderRef.current = null
+      rec.stop()
+    }
+    playerRef.current?.stop()
+    setPlaying(false)
+    setLiveNote(null)
+    setLevel(0)
+    setElapsed(0)
+    playheadRef.current = 0
+    setAnalysis(null)
+    setLoadedNotes(null)
+    setError(null)
+    setSaved(false)
+    setPhase('idle')
+  }, [])
+
+  // Back gesture (Android hardware/gesture, iOS swipe, browser back).
+  useEffect(() => {
+    const onPopState = () => hardReset()
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [hardReset])
+
   const stopRecording = useCallback(() => {
     const rec = recorderRef.current
     if (!rec) return
@@ -74,13 +134,15 @@ export function MelodyRecorder() {
     setPhase('processing')
 
     // small UX beat so the "recognizing" state is visible, then post-process
+    const token = ++analyzeTokenRef.current
     window.setTimeout(() => {
+      if (token !== analyzeTokenRef.current) return // view was reset meanwhile
       const result = analyzeRecording(frames)
       if (!result.rawSegments.length) {
         setPhase('idle')
         toast({
-          title: 'Ноты не распознаны',
-          description: 'Попробуйте напеть громче и ближе к микрофону',
+          title: t('toast.notRecognized'),
+          description: t('toast.notRecognizedDesc'),
           variant: 'destructive',
         })
         return
@@ -90,11 +152,11 @@ export function MelodyRecorder() {
       setGrid(0.5)
       setLoadedNotes(null)
       setSaved(false)
-      setTitle(defaultTitle())
+      setTitle(defaultTitle)
       playheadRef.current = 0
       setPhase('result')
     }, 350)
-  }, [toast])
+  }, [toast, t, defaultTitle])
   stopFnRef.current = stopRecording
 
   const startRecording = useCallback(async () => {
@@ -108,29 +170,31 @@ export function MelodyRecorder() {
     const rec = new MicRecorder()
     rec.onFrame = (f) => {
       setLevel(f.rms)
-      if (f.freq > 0 && f.prob > 0.55) {
-        setLiveNote(`${midiToName(freqToMidi(f.freq))} · ${Math.round(f.freq)} Гц`)
+      if (f.freq > 0 && f.prob > 0.6) {
+        setLiveNote(`${midiToName(freqToMidi(f.freq))} · ${Math.round(f.freq)}${t('unit.hz')}`)
       } else {
         setLiveNote(null)
       }
     }
     try {
       await rec.start()
+      // back gesture now stops the recording instead of leaving the app
+      pushViewGuard()
       recorderRef.current = rec
       setElapsed(0)
       setPhase('recording')
     } catch (e) {
       const err = e as Error
       if (err.message === 'MIC_UNAVAILABLE' || !navigator.mediaDevices?.getUserMedia) {
-        setError('Микрофон недоступен. Разрешите запись в настройках приложения или откройте веб-версию по HTTPS.')
+        setError(t('err.micUnavailable'))
       } else if (err.name === 'NotAllowedError') {
-        setError('Доступ к микрофону запрещён. Разрешите его в настройках системы и попробуйте снова.')
+        setError(t('err.micDenied'))
       } else {
-        setError('Не удалось получить доступ к микрофону. Проверьте разрешения и попробуйте снова.')
+        setError(t('err.micGeneric'))
       }
       setPhase('error')
     }
-  }, [])
+  }, [t])
 
   const handleToggle = useCallback(() => {
     if (phase === 'recording') {
@@ -189,37 +253,37 @@ export function MelodyRecorder() {
     if (!notes.length) return
     try {
       await saveBlob(notesToMidiBlob(notes, bpm, title || 'Melody Sketch'), 'melody-sketch.mid')
-      toast({ title: 'MIDI сохранён', description: 'Файл откроется в любой DAW или piano roll редакторе' })
+      toast({ title: t('toast.midiSaved'), description: t('toast.midiSavedDesc') })
     } catch {
-      toast({ title: 'Не удалось сохранить MIDI', variant: 'destructive' })
+      toast({ title: t('toast.midiFailed'), variant: 'destructive' })
     }
-  }, [notes, bpm, title, toast])
+  }, [notes, bpm, title, toast, t])
 
   const handleExportWav = useCallback(async () => {
     if (!notes.length || exportingWav) return
     setExportingWav(true)
-    toast({ title: 'Рендерю WAV…' })
+    toast({ title: t('toast.renderingWav') })
     try {
       const blob = await renderMelodyWav(notes, bpm, wave)
       await saveBlob(blob, 'melody-sketch.wav')
-      toast({ title: 'WAV сохранён', description: 'Синтезированная версия вашей мелодии' })
+      toast({ title: t('toast.wavSaved'), description: t('toast.wavSavedDesc') })
     } catch {
-      toast({ title: 'Ошибка экспорта WAV', variant: 'destructive' })
+      toast({ title: t('toast.wavFailed'), variant: 'destructive' })
     } finally {
       setExportingWav(false)
     }
-  }, [notes, bpm, wave, exportingWav, toast])
+  }, [notes, bpm, wave, exportingWav, toast, t])
 
   const handleShare = useCallback(async () => {
     if (!notes.length) return
     try {
-      await shareBlob(notesToMidiBlob(notes, bpm, title || 'Melody Sketch'), 'melody-sketch.mid', title || 'Моя мелодия')
-      toast({ title: 'Файл готов к отправке' })
+      await shareBlob(notesToMidiBlob(notes, bpm, title || 'Melody Sketch'), 'melody-sketch.mid', title || 'HumNote')
+      toast({ title: t('toast.shareReady') })
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
-      toast({ title: 'Не удалось открыть общий доступ', variant: 'destructive' })
+      toast({ title: t('toast.shareFailed'), variant: 'destructive' })
     }
-  }, [notes, bpm, title, toast])
+  }, [notes, bpm, title, toast, t])
 
   const handleSave = useCallback(() => {
     if (!notes.length || saving) return
@@ -227,26 +291,28 @@ export function MelodyRecorder() {
     try {
       addSketch({
         id: newSketchId(),
-        title: title || 'Набросок',
+        title: title || t('sketch.default'),
         bpm: Math.round(bpm),
         notes: notes.map((n) => ({ midi: n.midi, startBeat: n.startBeat, durBeats: n.durBeats })),
         createdAt: new Date().toISOString(),
       } satisfies MelodySketch)
       setSaved(true)
-      toast({ title: 'Сохранено в историю', description: 'Набросок хранится на устройстве' })
+      toast({ title: t('toast.savedTitle'), description: t('toast.savedDesc') })
     } finally {
       setSaving(false)
     }
-  }, [notes, bpm, title, durationSec, saving, addSketch, toast])
+  }, [notes, bpm, title, saving, addSketch, toast, t])
 
   const handleLoad = useCallback(
     (rec: MelodySketch) => {
       playerRef.current?.stop()
       setPlaying(false)
       if (!rec.notes.length) {
-        toast({ title: 'Файл повреждён', variant: 'destructive' })
+        toast({ title: t('toast.corrupt'), variant: 'destructive' })
         return
       }
+      // back gesture returns from the result view to the recorder
+      pushViewGuard()
       setAnalysis(null)
       setLoadedNotes(rec.notes)
       setBpm(rec.bpm)
@@ -261,27 +327,55 @@ export function MelodyRecorder() {
     [toast]
   )
 
+  /** "Новая запись" — unwind the pushed history entry so the next back leaves cleanly. */
   const handleReset = useCallback(() => {
-    playerRef.current?.stop()
-    setPlaying(false)
-    playheadRef.current = 0
-    setAnalysis(null)
-    setLoadedNotes(null)
-    setError(null)
-    setSaved(false)
-    setPhase('idle')
-  }, [])
+    if (hasViewGuard()) {
+      window.history.back() // popstate → hardReset
+    } else {
+      hardReset()
+    }
+  }, [hardReset])
 
   const isFromHistory = !analysis && !!loadedNotes
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="mx-auto w-full max-w-2xl px-4 pb-2 pt-6">
-        <div className="flex items-center justify-center gap-2">
-          <AudioLines className="h-5 w-5 text-emerald-400" aria-hidden />
-          <h1 className="text-sm font-medium uppercase tracking-widest text-zinc-300">
-            Ментальный диктофон мелодий
-          </h1>
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="mx-auto w-full max-w-2xl px-4 pb-2 pt-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <AudioLines className="h-5 w-5 shrink-0 text-primary" aria-hidden />
+            <h1 className="truncate text-xs font-medium uppercase tracking-widest text-muted-foreground sm:text-sm">
+              {t('app.title')}
+            </h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
+              <SelectTrigger
+                size="sm"
+                aria-label={t('lang.aria')}
+                className="h-9 w-[4.7rem] gap-1 rounded-xl border-border bg-card px-2.5"
+              >
+                <Globe className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                <span className="text-xs font-semibold uppercase tracking-wide">{locale}</span>
+              </SelectTrigger>
+              <SelectContent>
+                {LOCALES.map((l) => (
+                  <SelectItem key={l} value={l} className="text-foreground">
+                    {LOCALE_NAMES[l]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleTheme}
+              aria-label={t('theme.aria')}
+              className="h-9 w-9 rounded-xl border-border bg-card"
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -325,7 +419,7 @@ export function MelodyRecorder() {
             {error && (
               <div
                 role="alert"
-                className="flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"
+                className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
               >
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
                 <p>{error}</p>
@@ -337,12 +431,12 @@ export function MelodyRecorder() {
         <HistoryList onLoad={handleLoad} />
       </main>
 
-      <footer className="mt-auto border-t border-zinc-900">
-        <div className="mx-auto flex w-full max-w-2xl items-center justify-between px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 text-xs text-zinc-600">
-          <span>HumNote · офлайн, без сервера</span>
+      <footer className="mt-auto border-t border-border">
+        <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 text-xs text-muted-foreground">
+          <span>{t('footer.left')}</span>
           <span className="flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-            YIN · Web Audio · данные не покидают устройство
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+            YIN · Web Audio · {t('footer.tech')}
           </span>
         </div>
       </footer>

@@ -1,6 +1,6 @@
 {
   "name": "humnote",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "HumNote — ментальный диктофон мелодий: напойте — получите ноты, piano roll и MIDI. Полностью офлайн",

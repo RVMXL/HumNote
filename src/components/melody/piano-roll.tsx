@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { NoteEvent } from '@/lib/audio/types'
 import { midiToName } from '@/lib/audio/notes'
+import { useI18n } from '@/lib/i18n'
+import { useTheme } from '@/lib/theme'
 
 interface PianoRollProps {
   notes: NoteEvent[]
@@ -10,7 +12,20 @@ interface PianoRollProps {
   playheadRef: React.MutableRefObject<number>
 }
 
-const COLORS = {
+interface RollColors {
+  bg: string
+  gridWeak: string
+  gridStrong: string
+  cRow: string
+  noteFill: string
+  noteStroke: string
+  noteLabel: string
+  playhead: string
+  barLabel: string
+  octaveLabel: string
+}
+
+const DARK_COLORS: RollColors = {
   bg: '#141417',
   gridWeak: 'rgba(255,255,255,0.05)',
   gridStrong: 'rgba(255,255,255,0.1)',
@@ -21,6 +36,19 @@ const COLORS = {
   playhead: '#fafafa',
   barLabel: 'rgba(255,255,255,0.28)',
   octaveLabel: 'rgba(255,255,255,0.22)',
+}
+
+const LIGHT_COLORS: RollColors = {
+  bg: '#f1f2f1',
+  gridWeak: 'rgba(0,0,0,0.06)',
+  gridStrong: 'rgba(0,0,0,0.13)',
+  cRow: 'rgba(5,150,105,0.05)',
+  noteFill: '#10b981',
+  noteStroke: '#047857',
+  noteLabel: '#022c22',
+  playhead: '#18181b',
+  barLabel: 'rgba(0,0,0,0.4)',
+  octaveLabel: 'rgba(0,0,0,0.35)',
 }
 
 function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -37,8 +65,12 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 /**
  * Minimal piano roll visualization of the recognized melody on canvas,
  * with an animated playhead driven by the synth player via playheadRef.
+ * Colors follow the active theme.
  */
 export function PianoRoll({ notes, playing, playheadRef }: PianoRollProps) {
+  const { t } = useI18n()
+  const { theme } = useTheme()
+  const dark = theme === 'dark'
   const wrapRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [width, setWidth] = useState(0)
@@ -55,6 +87,7 @@ export function PianoRoll({ notes, playing, playheadRef }: PianoRollProps) {
     const canvas = canvasRef.current
     if (!canvas || width === 0 || notes.length === 0) return
 
+    const COLORS = dark ? DARK_COLORS : LIGHT_COLORS
     const dpr = window.devicePixelRatio || 1
     const minMidi = Math.min(...notes.map((n) => n.midi))
     const maxMidi = Math.max(...notes.map((n) => n.midi))
@@ -162,16 +195,16 @@ export function PianoRoll({ notes, playing, playheadRef }: PianoRollProps) {
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-  }, [notes, width, playing, playheadRef])
+  }, [notes, width, playing, playheadRef, dark])
 
   return (
-    <div ref={wrapRef} className="w-full overflow-hidden rounded-xl border border-zinc-800">
+    <div ref={wrapRef} className="w-full overflow-hidden rounded-xl border border-border">
       {notes.length === 0 ? (
-        <div className="flex h-32 items-center justify-center text-sm text-zinc-500">
-          Нет нот для отображения
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+          {t('pianoRoll.empty')}
         </div>
       ) : (
-        <canvas ref={canvasRef} role="img" aria-label="Piano roll распознанной мелодии" />
+        <canvas ref={canvasRef} role="img" aria-label={t('pianoRoll.aria')} />
       )}
     </div>
   )

@@ -13,10 +13,12 @@ export interface LivePitch {
 }
 
 /**
- * Microphone capture service: requests the mic with noise suppression enabled,
- * filters rumble/hiss with biquad filters and runs YIN pitch detection in real
- * time, collecting (time, frequency, loudness, confidence) frames for the
- * post-processing pipeline.
+ * Microphone capture service: requests the RAW mic signal (browser noise
+ * suppression / AGC are disabled — they mangle whistled tones and pump the
+ * gain mid-note), filters rumble/hiss with biquad filters and runs YIN pitch
+ * detection in real time, collecting (time, frequency, loudness, confidence)
+ * frames for the post-processing pipeline. All noise handling happens later,
+ * in analysis.ts.
  */
 export class MicRecorder {
   private ctx: AudioContext | null = null
@@ -36,12 +38,13 @@ export class MicRecorder {
     }
     this.frames = []
 
-    // High quality mono capture with built-in noise filtering.
+    // Raw mono capture. Browser DSP (NS/AGC/EC) is a known killer of clean
+    // sustained tones like whistles — the post-processing gate is smarter.
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
-        noiseSuppression: true,
-        autoGainControl: true,
+        noiseSuppression: false,
+        autoGainControl: false,
         channelCount: 1,
       },
     })

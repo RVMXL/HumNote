@@ -44,7 +44,19 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  ignores: [
+    "node_modules/**",
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+    "examples/**",
+    "skills",
+    // generated Android/Capacitor artifacts — never lint minified bundles
+    "android/app/build/**",
+    "android/app/src/main/assets/public/**",
+    "android/.gradle/**",
+  ],
 }];
 
 export default eslintConfig;

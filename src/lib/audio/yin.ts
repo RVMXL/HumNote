@@ -5,15 +5,25 @@ export interface YinResult {
   prob: number
 }
 
+/** d' above this level means "definitely no periodic signal" — bail out. */
+const MAX_NORMALIZED_DIFF = 0.85
+
 /**
  * YIN pitch detection algorithm (A. de Cheveigné & H. Kawahara, 2002).
  * Lightweight, works well for humming and whistling in the 60..2500 Hz range.
+ *
+ * Instead of dropping the frame when no valley crosses the absolute threshold,
+ * we fall back to the global minimum of the normalized difference and report
+ * its actual confidence. Transitions between notes (weak voicing, glides) then
+ * stay continuous with a lower `prob`, and the post-processing pipeline in
+ * analysis.ts filters unvoiced frames by that confidence — much fewer dropped
+ * frames means fewer fragmented notes.
  *
  * @param buf        time-domain window (2048 samples recommended)
  * @param sampleRate audio context sample rate
  * @param threshold  absolute threshold on the cumulative mean normalized difference
  */
-export function yin(buf: Float32Array, sampleRate: number, threshold = 0.12): YinResult {
+export function yin(buf: Float32Array, sampleRate: number, threshold = 0.15): YinResult {
   const tauMax = Math.floor(buf.length / 2)
   if (tauMax < 4) return { freq: -1, prob: 0 }
 
@@ -37,7 +47,7 @@ export function yin(buf: Float32Array, sampleRate: number, threshold = 0.12): Yi
     yinBuffer[tau] = runningSum === 0 ? 1 : (yinBuffer[tau] * tau) / runningSum
   }
 
-  // Step 3: absolute threshold — first local minimum below threshold
+  // Step 3a: absolute threshold — first local minimum below threshold
   let tauEstimate = -1
   for (let tau = 2; tau < tauMax; tau++) {
     if (yinBuffer[tau] < threshold) {
@@ -46,7 +56,16 @@ export function yin(buf: Float32Array, sampleRate: number, threshold = 0.12): Yi
       break
     }
   }
-  if (tauEstimate === -1) return { freq: -1, prob: 0 }
+
+  // Step 3b: fallback — global minimum, reported with its true confidence
+  if (tauEstimate === -1) {
+    let best = 2
+    for (let tau = 3; tau < tauMax; tau++) {
+      if (yinBuffer[tau] < yinBuffer[best]) best = tau
+    }
+    if (yinBuffer[best] >= MAX_NORMALIZED_DIFF) return { freq: -1, prob: 0 }
+    tauEstimate = best
+  }
 
   const prob = Math.max(0, Math.min(1, 1 - yinBuffer[tauEstimate]))
 

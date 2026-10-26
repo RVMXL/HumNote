@@ -43,26 +43,31 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Light theme ────────────────────────────────────────────────────────── */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  color-scheme: light;
+  --background: oklch(0.982 0.002 120);
+  --foreground: oklch(0.155 0.01 170);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.155 0.01 170);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.155 0.01 170);
+  /* emerald-600 */
+  --primary: oklch(0.596 0.145 163.225);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.955 0.005 140);
+  --secondary-foreground: oklch(0.25 0.01 170);
+  --muted: oklch(0.955 0.005 140);
+  --muted-foreground: oklch(0.45 0.01 170);
+  /* emerald-50 hover with deep green text — readable select/highlight rows */
+  --accent: oklch(0.966 0.024 166.113);
+  --accent-foreground: oklch(0.262 0.051 172.552);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.9 0.005 140);
+  --input: oklch(0.9 0.005 140);
+  /* emerald-500 */
+  --ring: oklch(0.696 0.17 162.48);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -70,7 +75,7 @@
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.596 0.145 163.225);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
@@ -78,25 +83,29 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ── Dark theme (default look of HumNote) ───────────────────────────────── */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  color-scheme: dark;
+  --background: oklch(0.16 0.005 170);
+  --foreground: oklch(0.975 0.002 120);
+  --card: oklch(0.215 0.006 170);
+  --card-foreground: oklch(0.975 0.002 120);
+  /* slightly lighter than card so dropdowns float above it */
+  --popover: oklch(0.245 0.007 170);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  /* emerald-400 with near-black foreground — same as the "Слушать" button */
+  --primary: oklch(0.765 0.177 163.223);
+  --primary-foreground: oklch(0.24 0.05 172);
+  --secondary: oklch(0.27 0.006 170);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --muted: oklch(0.27 0.006 170);
+  --muted-foreground: oklch(0.71 0.005 140);
+  --accent: oklch(0.31 0.02 168);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.696 0.17 162.48 / 60%);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -139,12 +148,12 @@
   animation: pulse-ring 1.8s cubic-bezier(0.22, 1, 0.36, 1) 0.9s infinite;
 }
 
-/* Slim dark scrollbar for the history list */
+/* Slim scrollbar for the history list, follows the active theme */
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
   border-radius: 999px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
