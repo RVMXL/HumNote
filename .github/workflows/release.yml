@@ -126,7 +126,7 @@ jobs:
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
           KS_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASS: ${{ secrets.KEY_PASSWORD }}
-          KEYSTORE_SHA256: 721674bf32530ec9840533df1a99b50e94069c4319154acf9b4b487f5f44a538
+          KEYSTORE_SHA256: a4e6f3b4bb07b80080d2e8835a2c8b39c24f9ade5f4a0a941c335ef82c20757b
         run: |
           set -euo pipefail
           if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KS_ALIAS" ] || [ -z "$KEY_PASS" ]; then
@@ -178,7 +178,7 @@ jobs:
           # Отпечаток сверяется с тем, что заявлен в README (открытая константа —
           # пользователь сверяет APK по нему): подмена ключа в Secrets ломает
           # сборку, а не тихо подписывает APK чужим ключом.
-          EXPECTED="72743d82883d332b9b7b86213f660274870aababa63b1d5d6a250ae76873ad7b"
+          EXPECTED="072d73ddcefce9668bb3814c31610f43aa9b28495b469b3c8c71771976d39f1d"
           if [ "$(echo "$CERT_SHA" | tr 'A-F' 'a-f')" != "$EXPECTED" ]; then
             echo "✗ сертификат APK ($CERT_SHA) не совпал с заявленным в README ($EXPECTED)"
             exit 1
