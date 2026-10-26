@@ -52,6 +52,9 @@ server.log
 /.zscripts
 /examples
 /skills
+/mini-services
+/tests
+/tailwind.config.ts
 /.secrets-tools
 local-*
 .claude
