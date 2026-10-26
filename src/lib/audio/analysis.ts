@@ -1,8 +1,16 @@
 import { freqToMidi } from './notes'
 import { NoteEvent, PitchFrame, RawSegment } from './types'
 
-const MIN_FREQ = 60
-const MAX_FREQ = 2300
+/** Frequency gate: low enough to admit sub-harmonic misreads (~43 Hz is the
+ *  YIN floor with a 2048 window) so the MIDI floor can fold them up, instead
+ *  of dropping the frames and fragmenting the phrase. Real rumble never gets
+ *  here — the recorder high-passes below 70 Hz at 24 dB/oct. */
+const MIN_FREQ = 40
+const MAX_FREQ = 3200
+/** Human hums bottom out around E2 (≈ 82 Hz). YIN below that has locked onto
+ *  a sub-harmonic — fold the frame back up instead of dropping it (dropping
+ *  fragments the phrase; folding preserves it). */
+const MIN_HUM_MIDI = 40
 /** YIN confidence floor for a frame to count as voiced. */
 const MIN_PROB = 0.6
 /** silence longer than this splits the pitch run */
@@ -50,7 +58,9 @@ export function framesToSegments(frames: PitchFrame[]): RawSegment[] {
   const voiced: { t: number; midi: number }[] = []
   for (const f of frames) {
     if (f.freq > MIN_FREQ && f.freq < MAX_FREQ && f.prob >= MIN_PROB && f.rms > gate) {
-      voiced.push({ t: f.t, midi: freqToMidi(f.freq) })
+      let midi = freqToMidi(f.freq)
+      while (midi < MIN_HUM_MIDI) midi += 12
+      voiced.push({ t: f.t, midi })
     }
   }
   if (voiced.length < 2) return []

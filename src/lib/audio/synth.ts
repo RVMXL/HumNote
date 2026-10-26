@@ -12,8 +12,10 @@ interface ScheduleOptions {
 }
 
 interface ScheduledNode {
-  osc: OscillatorNode
+  oscs: OscillatorNode[]
   gain: GainNode
+  /** constant per-partial gains (sine stack) — tracked for clean teardown */
+  partials: GainNode[]
 }
 
 /**
@@ -33,34 +35,87 @@ function scheduleSynth(ctx: BaseAudioContext, dest: AudioNode, opts: ScheduleOpt
     const dur = Math.max(0.06, n.durBeats * spb * 0.9)
     const en = st + dur
 
-    const osc = ctx.createOscillator()
-    osc.type = wave
-    osc.frequency.value = freq
-
     const g = ctx.createGain()
-    const peak = wave === 'sine' ? 0.3 : 0.17
+    g.connect(dest)
     const attack = 0.015
     const release = 0.05
-    g.gain.setValueAtTime(0.0001, st)
-    g.gain.exponentialRampToValueAtTime(peak, st + attack)
-    const relStart = Math.max(st + attack, en - release)
-    g.gain.setValueAtTime(peak, relStart)
-    g.gain.exponentialRampToValueAtTime(0.0001, Math.max(en, relStart + 0.02))
 
-    osc.connect(g)
-    g.connect(dest)
-    osc.start(st)
-    osc.stop(Math.max(en, relStart + 0.02) + 0.03)
+    const oscs: OscillatorNode[] = []
+    const partials: GainNode[] = []
+    let relStart: number
 
-    nodes.push({ osc, gain: g })
+    if (wave === 'sine') {
+      // A bare sine below ~C3 (131 Hz) is nearly inaudible on phone speakers
+      // — the driver physically cannot reproduce it, so the note either
+      // disappears or the speaker buzzes/distorts ("farting"). Layer the 2nd
+      // and 3rd harmonics: perceived pitch stays the same, but small speakers
+      // get content they can actually move. Low notes get an extra-hot octave
+      // partial; the fundamental is scaled down a touch so the sum never
+      // clips the tiny driver.
+      const low = freq < 130
+      const peak = low ? 0.24 : 0.3
+      const fundamental = ctx.createOscillator()
+      fundamental.type = 'sine'
+      fundamental.frequency.value = freq
+      fundamental.connect(g)
+      oscs.push(fundamental)
+
+      const g2 = ctx.createGain()
+      g2.gain.value = low ? 0.55 : 0.3
+      const o2 = ctx.createOscillator()
+      o2.type = 'sine'
+      o2.frequency.value = freq * 2
+      o2.connect(g2)
+      g2.connect(g)
+      oscs.push(o2)
+      partials.push(g2)
+
+      const g3 = ctx.createGain()
+      g3.gain.value = low ? 0.18 : 0.1
+      const o3 = ctx.createOscillator()
+      o3.type = 'sine'
+      o3.frequency.value = freq * 3
+      o3.connect(g3)
+      g3.connect(g)
+      oscs.push(o3)
+      partials.push(g3)
+
+      g.gain.setValueAtTime(0.0001, st)
+      g.gain.exponentialRampToValueAtTime(peak, st + attack)
+      relStart = Math.max(st + attack, en - release)
+      g.gain.setValueAtTime(peak, relStart)
+      g.gain.exponentialRampToValueAtTime(0.0001, Math.max(en, relStart + 0.02))
+    } else {
+      const peak = 0.17
+      const osc = ctx.createOscillator()
+      osc.type = wave
+      osc.frequency.value = freq
+      osc.connect(g)
+      oscs.push(osc)
+
+      g.gain.setValueAtTime(0.0001, st)
+      g.gain.exponentialRampToValueAtTime(peak, st + attack)
+      relStart = Math.max(st + attack, en - release)
+      g.gain.setValueAtTime(peak, relStart)
+      g.gain.exponentialRampToValueAtTime(0.0001, Math.max(en, relStart + 0.02))
+    }
+
+    for (const o of oscs) {
+      o.start(st)
+      o.stop(Math.max(en, relStart + 0.02) + 0.03)
+    }
+
+    nodes.push({ oscs, gain: g, partials })
     endTime = Math.max(endTime, Math.max(en, relStart + 0.02))
   }
   return { endTime, nodes }
 }
 
 /**
- * Minimal synthesizer player for the recognized sketch.
- * Plays with a standard Sine/Square wave, reports the current beat for the piano roll.
+ * Minimal synthesizer player for the recognized sketch. Sine mode renders an
+ * additive stack (fundamental + 2nd/3rd harmonics) so low male-voice notes
+ * stay audible and undistorted on phone speakers; reports the current beat
+ * for the piano roll.
  */
 export class SynthPlayer {
   private ctx: AudioContext | null = null
@@ -118,11 +173,20 @@ export class SynthPlayer {
   private stopInternal() {
     this.playing = false
     cancelAnimationFrame(this.rafId)
-    for (const { osc, gain } of this.nodes) {
-      try {
-        osc.stop()
-      } catch {
-        /* already stopped */
+    for (const { oscs, gain, partials } of this.nodes) {
+      for (const o of oscs) {
+        try {
+          o.stop()
+        } catch {
+          /* already stopped */
+        }
+      }
+      for (const p of partials) {
+        try {
+          p.disconnect()
+        } catch {
+          /* noop */
+        }
       }
       try {
         gain.disconnect()

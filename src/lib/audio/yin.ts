@@ -10,7 +10,8 @@ const MAX_NORMALIZED_DIFF = 0.85
 
 /**
  * YIN pitch detection algorithm (A. de Cheveigné & H. Kawahara, 2002).
- * Lightweight, works well for humming and whistling in the 60..2500 Hz range.
+ * Lightweight, works well for humming and whistling in the 60..3200 Hz range,
+ * with a sub-harmonic (octave-down) guard for low male voices.
  *
  * Instead of dropping the frame when no valley crosses the absolute threshold,
  * we fall back to the global minimum of the normalized difference and report
@@ -65,6 +66,35 @@ export function yin(buf: Float32Array, sampleRate: number, threshold = 0.15): Yi
     }
     if (yinBuffer[best] >= MAX_NORMALIZED_DIFF) return { freq: -1, prob: 0 }
     tauEstimate = best
+  }
+
+  // Step 3c: anti-sub-harmonic correction (the "male voice an octave too
+  // low" bug). A low voice with a creaky/pulse-like glottal wave often yields
+  // a DEEPER minimum at 2·T than at the true period T — the threshold scan
+  // misses T, and the global-minimum fallback actively prefers 2·T. If a
+  // credible local minimum sits at ≈ T/2, prefer the higher octave: a signal
+  // that genuinely repeats every T/2 scores there at least as well as at T,
+  // while a spurious sub-harmonic dip is clearly worse. The allowance grows
+  // with the current dip (noisy frames tolerate a rougher half-period) but is
+  // capped, and garbage frames (d' ≥ 0.5) are left for the confidence filter.
+  {
+    const halfCenter = Math.round(tauEstimate / 2)
+    const curVal = yinBuffer[tauEstimate]
+    if (halfCenter >= 3 && curVal < 0.5) {
+      const radius = Math.max(3, Math.round(tauEstimate * 0.06))
+      let best = -1
+      for (let tau = Math.max(2, halfCenter - radius); tau <= Math.min(tauMax - 1, halfCenter + radius); tau++) {
+        if (best === -1 || yinBuffer[tau] < yinBuffer[best]) best = tau
+      }
+      const isLocalMin =
+        best > 2 && best < tauMax - 1 &&
+        yinBuffer[best] <= yinBuffer[best - 1] && yinBuffer[best] <= yinBuffer[best + 1]
+      const halfVal = yinBuffer[best]
+      const allowance = Math.min(0.3, 0.2 + 0.55 * curVal)
+      if (isLocalMin && halfVal < allowance) {
+        tauEstimate = best
+      }
+    }
   }
 
   const prob = Math.max(0, Math.min(1, 1 - yinBuffer[tauEstimate]))

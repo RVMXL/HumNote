@@ -57,11 +57,17 @@ export class MicRecorder {
 
     const src = this.ctx.createMediaStreamSource(this.stream)
 
-    // Hardware-level noise filtering chain: cut rumble below the vocal range
-    // and hiss above the whistle range.
+    // Hardware-level noise filtering chain: two cascaded 2-pole high-passes
+    // (24 dB/oct total) kill sub-bass rumble — desk knocks, wind, handling
+    // noise below the vocal range. Rumble periods are the exact trap that
+    // drags YIN into sub-harmonic (octave-too-low) readings on male voices;
+    // the low-pass then cuts hiss above the whistle range.
     const hp = this.ctx.createBiquadFilter()
     hp.type = 'highpass'
-    hp.frequency.value = 65
+    hp.frequency.value = 70
+    const hp2 = this.ctx.createBiquadFilter()
+    hp2.type = 'highpass'
+    hp2.frequency.value = 70
     const lp = this.ctx.createBiquadFilter()
     lp.type = 'lowpass'
     lp.frequency.value = 4500
@@ -71,7 +77,8 @@ export class MicRecorder {
     this.analyser.smoothingTimeConstant = 0
 
     src.connect(hp)
-    hp.connect(lp)
+    hp.connect(hp2)
+    hp2.connect(lp)
     lp.connect(this.analyser) // not connected to destination — no feedback
 
     this.startMs = performance.now()
