@@ -1,0 +1,78 @@
+# HumNote CI: типы + lint + статическая сборка web + debug-сборка APK.
+#
+# Приложение автономное (output: export) — сервер и БД не нужны.
+# Что проверяем и почему:
+#   web:     tsc --noEmit (строгая типизация), eslint, next build → out/index.html —
+#            статический экспорт падает на любом серверном импорте;
+#   android: cap sync + assembleDebug — ловит поломку gradle/манифеста/ресурсов
+#            ДО релиза (release.yml не должен обнаруживать это первым).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Минимальные права: workflow только читает код и ничего не публикует.
+permissions:
+  contents: read
+
+# Новые пуши отменяют устаревшие прогоны той же ветки (экономия раннеров)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: Зависимости
+        run: bun install --frozen-lockfile
+
+      - name: "Строгий type-check (tsc --noEmit)"
+        run: bunx tsc --noEmit
+
+      - name: Линт (eslint)
+        run: bun run lint
+
+      - name: "Статическая сборка (output: export)"
+        run: bunx next build
+
+      - name: Проверка результата
+        run: |
+          test -f out/index.html || { echo "✗ нет out/index.html"; exit 1; }
+          test -f out/logo.svg || { echo "✗ нет out/logo.svg"; exit 1; }
+          echo "✓ out/ готов"
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Зависимости
+        run: bun install --frozen-lockfile
+
+      - name: Статическая сборка web
+        run: bunx next build
+
+      - name: capacitor sync (out/ → android assets)
+        run: bunx cap sync android
+
+      - name: Debug-сборка APK (гейт gradle/манифеста/ресурсов)
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
