@@ -1,6 +1,6 @@
 {
   "name": "humnote",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "license": "Apache-2.0",
   "description": "HumNote — ментальный диктофон мелодий: напойте — получите ноты, piano roll и MIDI. Полностью офлайн",
@@ -14,7 +14,8 @@
     "sync:check": "bash scripts/check-remote.sh check",
     "sync:pull": "bash scripts/check-remote.sh pull",
     "sync:push": "bash scripts/check-remote.sh push",
-    "sync:restore": "bash scripts/check-remote.sh restore"
+    "sync:restore": "bash scripts/check-remote.sh restore",
+    "test:dsp": "bun scripts/dsp-test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8",

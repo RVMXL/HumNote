@@ -26,6 +26,8 @@ const MIN_NOTE_SEC = 0.1
 /** usable instrument range after rounding */
 const MIN_MIDI = 36
 const MAX_MIDI = 96
+/** a segment spanning more than this many semitones is a glide, not a note */
+const GLIDE_ST = 5
 /** frame window length in seconds (2048 samples @ 44.1kHz ≈ 46ms) */
 const FRAME_SEC = 0.046
 
@@ -52,7 +54,7 @@ export function framesToSegments(frames: PitchFrame[]): RawSegment[] {
     rmsSorted[Math.min(rmsSorted.length - 1, Math.floor(p * rmsSorted.length))]
   const noise = quantile(0.15)
   const loud = quantile(0.95)
-  const gate = Math.max(noise * 2.2, loud * 0.06, 0.006)
+  const gate = Math.max(noise * 1.8, loud * 0.05, 0.006)
 
   // 2) voiced frames only
   const voiced: { t: number; midi: number }[] = []
@@ -69,7 +71,8 @@ export function framesToSegments(frames: PitchFrame[]): RawSegment[] {
   const runs: { t: number; midi: number }[][] = []
   let run = [voiced[0]]
   for (let i = 1; i < voiced.length; i++) {
-    if (voiced[i].t - voiced[i - 1].t > RUN_GAP_SEC) {
+    // 1e-9 guard: 3 hop gaps land at 0.12000…001 in float — must not split
+    if (voiced[i].t - voiced[i - 1].t > RUN_GAP_SEC + 1e-9) {
       runs.push(run)
       run = [voiced[i]]
     } else {
@@ -77,11 +80,18 @@ export function framesToSegments(frames: PitchFrame[]): RawSegment[] {
     }
   }
   runs.push(run)
-
-  // 4) per run: median smoothing + hysteresis segmentation
+  // 4) per run: median smoothing, glide rejection, hysteresis segmentation.
+  // A run whose pitch moves frame-to-frame most of the time is a portamento
+  // sweep, not a sequence of notes — emit nothing from it.
   const segments: RawSegment[] = []
   for (const r of runs) {
     const smoothed = medianSmooth(r)
+    if (smoothed.length >= 4) {
+      const deltas: number[] = []
+      for (let i = 1; i < smoothed.length; i++) deltas.push(Math.abs(smoothed[i].midi - smoothed[i - 1].midi))
+      deltas.sort((a, b) => a - b)
+      if (deltas[Math.floor(deltas.length / 2)] > 0.35) continue
+    }
     segmentRun(smoothed, segments)
   }
 
@@ -89,9 +99,23 @@ export function framesToSegments(frames: PitchFrame[]): RawSegment[] {
   let merged = mergeSegments(segments)
   merged = foldOctaveSandwiches(merged)
   merged = mergeSegments(merged)
-  return merged.filter(
-    (s) => s.endSec - s.startSec >= MIN_NOTE_SEC && s.midi >= MIN_MIDI && s.midi <= MAX_MIDI
-  )
+  return merged.filter((s) => {
+    if (s.endSec - s.startSec < MIN_NOTE_SEC) return false
+    if (s.midi < MIN_MIDI || s.midi > MAX_MIDI) return false
+    // short notes carry a higher confidence bar: transition junk (voice
+    // cracks, laughter, consonant bursts) is brief AND poorly periodic,
+    // while genuine fast notes stay confidently periodic throughout
+    if (s.endSec - s.startSec < 0.22) {
+      const probs: number[] = []
+      for (const f of frames) {
+        if (f.t >= s.startSec - 0.05 && f.t <= s.endSec && f.prob >= MIN_PROB) probs.push(f.prob)
+      }
+      if (!probs.length) return false
+      probs.sort((a, b) => a - b)
+      if (probs[Math.floor(probs.length / 2)] < 0.72) return false
+    }
+    return true
+  })
 }
 
 /** Median filter (window 5) inside a run — octave spikes and clicks vanish. */
@@ -132,7 +156,17 @@ function segmentRun(sm: { t: number; midi: number }[], out: RawSegment[]): void 
   const closeSeg = (endIdx: number, startIdx: number) => {
     if (endIdx < startIdx) return
     let sum = 0
-    for (let i = startIdx; i <= endIdx; i++) sum += sm[i].midi
+    let lo = Infinity
+    let hi = -Infinity
+    for (let i = startIdx; i <= endIdx; i++) {
+      sum += sm[i].midi
+      if (sm[i].midi < lo) lo = sm[i].midi
+      if (sm[i].midi > hi) hi = sm[i].midi
+    }
+    // A "note" whose pitch sweeps more than GLIDE_ST is a portamento /
+    // transition between phrases, not a musical note — emit nothing (a wrong
+    // pitch in the sequence hurts the melody more than a missing note).
+    if (hi - lo > GLIDE_ST) return
     out.push({
       midi: Math.round(sum / (endIdx - startIdx + 1)),
       startSec: sm[startIdx].t,
@@ -203,8 +237,12 @@ function foldOctaveSandwiches(segments: RawSegment[]): RawSegment[] {
 }
 
 /**
- * Rough tempo estimation: assume the median inter-onset interval is an
- * eighth note, then fold the result into a musically useful 65..190 BPM range.
+ * Tempo estimation. Seed from the median inter-onset interval (an eighth note
+ * assumption), then refine: among tempi in ±60% of the seed find the one whose
+ * eighth-note grid best aligns with the hummed onsets — the median IOI alone
+ * is too coarse and regularly lands between the true beat and its half/double.
+ * Final fold into a musically useful 65..190 BPM (doubling/halving preserves
+ * grid phase, so the fit survives the fold).
  */
 export function estimateBpm(segments: RawSegment[]): number {
   if (segments.length < 4) return 100
@@ -214,10 +252,37 @@ export function estimateBpm(segments: RawSegment[]): number {
   }
   iois.sort((a, b) => a - b)
   const median = iois[Math.floor(iois.length / 2)]
-  let bpm = 30 / Math.max(0.1, median)
-  while (bpm < 65) bpm *= 2
-  while (bpm > 190) bpm /= 2
-  return Math.round(bpm)
+  let seed = 30 / Math.max(0.1, median)
+  while (seed < 65) seed *= 2
+  while (seed > 190) seed /= 2
+
+  const onsets = segments.map((s) => s.startSec)
+  const gridErr = (bpm: number) => {
+    const step = 30 / bpm // eighth-note grid
+    let err = 0
+    for (const o of onsets) err += Math.abs(o / step - Math.round(o / step))
+    return err / onsets.length
+  }
+
+  let best = seed
+  let bestErr = Infinity
+  for (let b = seed * 0.4; b <= seed * 1.6 + 0.001; b += 0.5) {
+    const e = gridErr(b)
+    if (e < bestErr) {
+      bestErr = e
+      best = b
+    }
+  }
+  // prefer the slower representative of an equally-good grid family
+  // (eighths at 173 = sixteenths at 86.5 — the fit cannot tell them apart,
+  // and a ballad hummed at ~86 should not display 173)
+  while (best / 2 >= 65 && gridErr(best / 2) <= bestErr + 0.01) {
+    best /= 2
+    bestErr = gridErr(best)
+  }
+  while (best < 65) best *= 2
+  while (best > 190) best /= 2
+  return Math.round(best)
 }
 
 /**

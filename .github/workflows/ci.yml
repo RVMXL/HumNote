@@ -1,9 +1,11 @@
-# HumNote CI: типы + lint + статическая сборка web + debug-сборка APK.
+# HumNote CI: типы + lint + DSP-регрессия + статическая сборка web + debug-сборка APK.
 #
 # Приложение автономное (output: export) — сервер и БД не нужны.
 # Что проверяем и почему:
-#   web:     tsc --noEmit (строгая типизация), eslint, next build → out/index.html —
-#            статический экспорт падает на любом серверном импорте;
+#   web:     tsc --noEmit (строгая типизация), eslint, bun run test:dsp (синтетический
+#            корпус распознавания: голос/свист/октавные ловушки/глиссандо),
+#            next build → out/index.html — статический экспорт падает на любом
+#            серверном импорте;
 #   android: cap sync + assembleDebug — ловит поломку gradle/манифеста/ресурсов
 #            ДО релиза (release.yml не должен обнаруживать это первым).
 
@@ -41,6 +43,9 @@ jobs:
 
       - name: Линт (eslint)
         run: bun run lint
+
+      - name: "DSP-регрессия (синтетический корпус распознавания)"
+        run: bun run test:dsp
 
       - name: "Статическая сборка (output: export)"
         run: bunx next build

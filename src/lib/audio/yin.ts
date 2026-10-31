@@ -11,7 +11,8 @@ const MAX_NORMALIZED_DIFF = 0.85
 /**
  * YIN pitch detection algorithm (A. de Cheveigné & H. Kawahara, 2002).
  * Lightweight, works well for humming and whistling in the 60..3200 Hz range,
- * with a sub-harmonic (octave-down) guard for low male voices.
+ * with guards against both octave errors (sub-harmonic reads on low male
+ * voices, harmonic reads on whistle-like tones).
  *
  * Instead of dropping the frame when no valley crosses the absolute threshold,
  * we fall back to the global minimum of the normalized difference and report
@@ -68,31 +69,51 @@ export function yin(buf: Float32Array, sampleRate: number, threshold = 0.15): Yi
     tauEstimate = best
   }
 
-  // Step 3c: anti-sub-harmonic correction (the "male voice an octave too
-  // low" bug). A low voice with a creaky/pulse-like glottal wave often yields
-  // a DEEPER minimum at 2·T than at the true period T — the threshold scan
-  // misses T, and the global-minimum fallback actively prefers 2·T. If a
-  // credible local minimum sits at ≈ T/2, prefer the higher octave: a signal
-  // that genuinely repeats every T/2 scores there at least as well as at T,
-  // while a spurious sub-harmonic dip is clearly worse. The allowance grows
-  // with the current dip (noisy frames tolerate a rougher half-period) but is
-  // capped, and garbage frames (d' ≥ 0.5) are left for the confidence filter.
+  // Step 3c/3d: octave guards — the two classic YIN failure modes on voices.
+  // Mutually exclusive, each keyed to a structural fingerprint:
+  //
+  // 3d (octave-UP fix): whistle-like voice quality (weak fundamental, strong
+  // 2nd harmonic) makes BOTH the T/2 dip and the T dip pass the threshold;
+  // the scan takes the first (T/2) and the estimate lands an octave high.
+  // Fingerprint: the dip at 2·tau is decisively deeper (< 45% of the current
+  // one) — impossible for a true-period-tau signal, whose 2·tau dip is only
+  // marginally deeper.
+  //
+  // 3c (octave-DOWN fix): a creaky low male voice yields a deeper dip at 2·T
+  // than at the true period T; the T dip misses the absolute threshold while
+  // still being credible. Fingerprint: the T/2 dip sits in the band
+  // [threshold, allowance] — below allowance (credible) but above the
+  // absolute threshold (which is exactly why the scan skipped it; a
+  // weak-fundamental tone, by contrast, has its T/2 dip below the threshold,
+  // so the two cases can never be confused).
   {
-    const halfCenter = Math.round(tauEstimate / 2)
-    const curVal = yinBuffer[tauEstimate]
-    if (halfCenter >= 3 && curVal < 0.5) {
-      const radius = Math.max(3, Math.round(tauEstimate * 0.06))
+    const findDip = (center: number): { tau: number; v: number } | null => {
+      const c = Math.round(center)
+      if (c < 3 || c > tauMax - 2) return null
+      const r = Math.max(3, Math.round(center * 0.06))
       let best = -1
-      for (let tau = Math.max(2, halfCenter - radius); tau <= Math.min(tauMax - 1, halfCenter + radius); tau++) {
+      for (let tau = Math.max(2, c - r); tau <= Math.min(tauMax - 1, c + r); tau++) {
         if (best === -1 || yinBuffer[tau] < yinBuffer[best]) best = tau
       }
       const isLocalMin =
         best > 2 && best < tauMax - 1 &&
         yinBuffer[best] <= yinBuffer[best - 1] && yinBuffer[best] <= yinBuffer[best + 1]
-      const halfVal = yinBuffer[best]
-      const allowance = Math.min(0.3, 0.2 + 0.55 * curVal)
-      if (isLocalMin && halfVal < allowance) {
-        tauEstimate = best
+      return isLocalMin ? { tau: best, v: yinBuffer[best] } : null
+    }
+
+    const curVal = yinBuffer[tauEstimate]
+    const dbl = findDip(tauEstimate * 2)
+    if (curVal > 0.02 && dbl && dbl.v < 0.15 && dbl.v < 0.45 * curVal) {
+      tauEstimate = dbl.tau
+    } else {
+      const half = findDip(tauEstimate / 2)
+      // 4·curVal: the half-period dip must be in the same quality league as
+      // the current one. On a clean frame (d' ≈ 0) ANY dip passes the
+      // absolute band — the ratio is what tells "credible alternative
+      // period" (≤ ~3× worse) from "not a period at all" (an exact signal
+      // scores ∞× worse at its half-period).
+      if (half && half.v >= 0.15 && half.v < Math.min(0.3, 0.2 + 0.55 * curVal) && half.v < 4 * curVal) {
+        tauEstimate = half.tau
       }
     }
   }
